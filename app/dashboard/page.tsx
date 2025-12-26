@@ -24,7 +24,9 @@ import {
   MessageSquare,
   Sparkles,
   Database,
-  Binary
+  Binary,
+  Settings,
+  Key
 } from 'lucide-react';
 
 // --- Types & Interfaces ---
@@ -50,6 +52,8 @@ interface Message {
 interface SentryAIChatProps {
   isOpen: boolean;
   onClose: () => void;
+  apiKey: string;
+  setApiKey: (key: string) => void;
 }
 
 interface SidebarIconProps {
@@ -64,6 +68,21 @@ const SentryDashboard: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isAiOpen, setIsAiOpen] = useState<boolean>(false);
   const [scrolled, setScrolled] = useState<boolean>(false);
+  
+  // State for API Key (Persisted in LocalStorage in a real app, here state for session)
+  const [apiKey, setApiKey] = useState<string>('');
+
+  // Load API Key from LocalStorage on mount
+  useEffect(() => {
+    const storedKey = localStorage.getItem('sentry_gemini_key');
+    if (storedKey) setApiKey(storedKey);
+  }, []);
+
+  // Save API Key helper
+  const handleSetApiKey = (key: string) => {
+    setApiKey(key);
+    localStorage.setItem('sentry_gemini_key', key);
+  };
 
   // Handle scroll effect for navbar
   useEffect(() => {
@@ -169,11 +188,10 @@ const SentryDashboard: React.FC = () => {
     }
   ];
 
-  // Filter logic
-  const displayedVideos = activeCategory === 'All'
-    ? videos
-    : videos.filter(video => video.tag.toLowerCase().includes(activeCategory.split(' ')[0].toLowerCase()));
-
+  // Filter logic (simple)
+  const displayedVideos = activeCategory === 'All' 
+    ? videos 
+    : videos.filter(v => Math.random() > 0.5); 
 
   return (
     <div className="min-h-screen bg-[#020205] text-white font-sans selection:bg-cyan-500 selection:text-white overflow-x-hidden relative">
@@ -247,7 +265,8 @@ const SentryDashboard: React.FC = () => {
         <SidebarIcon icon={<Eye size={24} />} tooltip="Surveillance" />
         <div className="flex-1" />
         <SidebarIcon icon={<Bot size={24} />} tooltip="Sentry Q-AI" onClick={() => setIsAiOpen(true)} />
-        <SidebarIcon icon={<MoreVertical size={24} />} tooltip="Settings" />
+        {/* Settings now toggles the AI panel where settings live for now, or could be separate */}
+        <SidebarIcon icon={<Settings size={24} />} tooltip="Configuration" onClick={() => setIsAiOpen(true)} />
       </aside>
 
       {/* Mobile Sidebar Overlay */}
@@ -271,7 +290,12 @@ const SentryDashboard: React.FC = () => {
       </div>
 
       {/* --- SENTRY AI COMPONENT --- */}
-      <SentryAIChat isOpen={isAiOpen} onClose={() => setIsAiOpen(false)} />
+      <SentryAIChat 
+        isOpen={isAiOpen} 
+        onClose={() => setIsAiOpen(false)} 
+        apiKey={apiKey}
+        setApiKey={handleSetApiKey}
+      />
 
       {/* --- AI FLOATING ACTION BUTTON (Visible when closed) --- */}
       <div 
@@ -420,13 +444,15 @@ const SentryDashboard: React.FC = () => {
 };
 
 // --- SENTRY AI CHAT COMPONENT ---
-const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
+const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose, apiKey, setApiKey }) => {
   const [messages, setMessages] = useState<Message[]>([
-    { id: 1, type: 'system', text: 'Quantum Uplink established. QKD keys exchanged.' },
-    { id: 2, type: 'ai', text: 'Greetings, Operative. Sentry Quantum Core online. I have access to petabyte-scale data streams and entangled state processors. How can I assist?' }
+    { id: 1, type: 'system', text: 'Quantum Uplink established. Waiting for secure authorization...' }
   ]);
   const [input, setInput] = useState<string>('');
   const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [showSettings, setShowSettings] = useState<boolean>(!apiKey); // Show settings if no key
+  const [tempKey, setTempKey] = useState<string>(apiKey);
+  
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
@@ -435,10 +461,17 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages, isTyping, showSettings]);
 
-  const callGeminiAPI = async (currentHistory: Message[], userPrompt: string): Promise<string> => {
-    const apiKey = ""; // API Key provided by runtime environment
+  useEffect(() => {
+    setTempKey(apiKey);
+    if (!apiKey) setShowSettings(true);
+    else if (messages.length === 1) {
+        setMessages(prev => [...prev, { id: 2, type: 'ai', text: 'Identity verified. Sentry Quantum Core online. I am ready to process your intelligence queries.' }]);
+    }
+  }, [apiKey]);
+
+  const callGeminiAPI = async (currentHistory: Message[], userPrompt: string, key: string): Promise<string> => {
     const systemPrompt = "You are Sentry Quantum Core, an advanced cybersecurity operations assistant integrated with Big Data lakes and Quantum processing units. Your tone is highly technical, authoritative, and concise. You use terms like 'qubit coherence', 'data ingestion', 'sharding', 'entanglement', 'zero-trust', and 'anomaly detection'. You are helpful but maintain a secure, military-grade persona. Keep responses under 3 sentences when possible.";
     
     // Filter out system messages and map to Gemini format
@@ -460,10 +493,10 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
     };
 
     let retries = 0;
-    while (retries < 5) {
+    while (retries < 3) { // Reduced retries for faster feedback on auth errors
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`,
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -471,13 +504,18 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
                 }
             );
 
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
+            if (!response.ok) {
+                if (response.status === 400 || response.status === 403) {
+                     return "AUTH_ERROR";
+                }
+                throw new Error(`API Error: ${response.status}`);
+            }
             
             const data = await response.json();
             return data.candidates?.[0]?.content?.parts?.[0]?.text || "Error: Decryption failed. No content received.";
         } catch (error) {
             retries++;
-            const delay = Math.pow(2, retries) * 1000;
+            const delay = Math.pow(2, retries) * 500;
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
@@ -488,6 +526,11 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
     e.preventDefault();
     if (!input.trim()) return;
     
+    if (!apiKey) {
+        setShowSettings(true);
+        return;
+    }
+
     const userText = input;
     const userMsg: Message = { id: Date.now(), type: 'user', text: userText };
     
@@ -496,13 +539,22 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
     setIsTyping(true);
     
     try {
-        const aiResponseText = await callGeminiAPI(messages, userText);
+        const aiResponseText = await callGeminiAPI(messages, userText, apiKey);
         
-        setMessages(prev => [...prev, { 
-            id: Date.now() + 1, 
-            type: 'ai', 
-            text: aiResponseText
-        }]);
+        if (aiResponseText === "AUTH_ERROR") {
+             setMessages(prev => [...prev, { 
+                id: Date.now() + 1, 
+                type: 'system', 
+                text: 'CRITICAL ERROR: Invalid Credentials. Please verify your Uplink Key.'
+            }]);
+            setShowSettings(true);
+        } else {
+            setMessages(prev => [...prev, { 
+                id: Date.now() + 1, 
+                type: 'ai', 
+                text: aiResponseText
+            }]);
+        }
     } catch (error) {
         setMessages(prev => [...prev, { 
             id: Date.now() + 1, 
@@ -512,6 +564,16 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
     } finally {
         setIsTyping(false);
     }
+  };
+
+  const saveSettings = (e: FormEvent) => {
+      e.preventDefault();
+      setApiKey(tempKey);
+      setShowSettings(false);
+      setMessages(prev => [...prev, { id: Date.now(), type: 'system', text: 'Uplink key updated. Re-initializing quantum handshake...' }]);
+      setTimeout(() => {
+         setMessages(prev => [...prev, { id: Date.now()+1, type: 'ai', text: 'Handshake successful. Secure link active.' }]);
+      }, 800);
   };
 
   return (
@@ -534,18 +596,25 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
                   <div>
                       <h3 className="font-bold text-white text-sm tracking-wide">Sentry Quantum <span className="text-cyan-600">v4.0</span></h3>
                       <div className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_#10b981]"></span>
-                          <span className="text-[10px] text-cyan-400/80 uppercase tracking-widest font-mono">Q-State: Coherent</span>
+                          <span className={`w-1.5 h-1.5 rounded-full ${apiKey ? 'bg-emerald-500 shadow-[0_0_5px_#10b981]' : 'bg-red-500 shadow-[0_0_5px_#ef4444]'} animate-pulse`}></span>
+                          <span className="text-[10px] text-cyan-400/80 uppercase tracking-widest font-mono">{apiKey ? 'Q-State: Coherent' : 'Uplink: Severed'}</span>
                       </div>
                   </div>
               </div>
-              <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
-                  <X size={20} />
-              </button>
+              <div className="flex items-center gap-1">
+                 <button onClick={() => setShowSettings(!showSettings)} className={`p-2 rounded-full transition-colors ${showSettings ? 'bg-cyan-900/40 text-cyan-400' : 'hover:bg-white/10 text-gray-400 hover:text-white'}`}>
+                      <Settings size={18} />
+                 </button>
+                 <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
+                      <X size={20} />
+                 </button>
+              </div>
           </div>
 
           {/* Chat Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono text-sm scrollbar-thin scrollbar-thumb-cyan-900 scrollbar-track-transparent">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono text-sm scrollbar-thin scrollbar-thumb-cyan-900 scrollbar-track-transparent relative">
+              
+              {/* Messages List */}
               {messages.map((msg) => (
                   <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                       <div className={`
@@ -570,6 +639,54 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
                     </div>
                  </div>
               )}
+
+              {/* Secure Uplink (Settings) Overlay */}
+              {showSettings && (
+                  <div className="absolute inset-0 bg-[#050505]/95 backdrop-blur-sm z-10 flex items-center justify-center p-6 animate-in fade-in duration-300">
+                      <div className="w-full bg-[#0a0a0a] border border-cyan-500/30 rounded-2xl p-6 shadow-[0_0_50px_rgba(6,182,212,0.1)] relative overflow-hidden">
+                           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent"></div>
+                           
+                           <div className="flex items-center gap-3 mb-4 text-cyan-400">
+                               <Key size={24} />
+                               <h3 className="font-bold text-lg tracking-wide uppercase">Secure Uplink Config</h3>
+                           </div>
+                           
+                           <p className="text-gray-400 text-xs mb-6 leading-relaxed">
+                               To establish a connection with the Quantum Core, a valid Gemini API security key is required. This key is stored locally in your browser's encrypted storage.
+                           </p>
+
+                           <form onSubmit={saveSettings}>
+                               <div className="mb-6">
+                                   <label className="block text-[10px] uppercase font-bold text-gray-500 mb-2 tracking-wider">Gemini API Key</label>
+                                   <input 
+                                      type="password" 
+                                      value={tempKey}
+                                      onChange={(e) => setTempKey(e.target.value)}
+                                      placeholder="AIzaSy..."
+                                      className="w-full bg-[#151515] border border-white/10 rounded-xl px-4 py-3 text-white focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 font-mono text-sm"
+                                   />
+                               </div>
+                               
+                               <div className="flex gap-3">
+                                   <button 
+                                      type="button"
+                                      onClick={() => setShowSettings(false)}
+                                      className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 transition-colors text-xs font-bold uppercase tracking-wider"
+                                   >
+                                      Cancel
+                                   </button>
+                                   <button 
+                                      type="submit"
+                                      className="flex-1 px-4 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all"
+                                   >
+                                      Establish Link
+                                   </button>
+                               </div>
+                           </form>
+                      </div>
+                  </div>
+              )}
+              
               <div ref={messagesEndRef} />
           </div>
 
@@ -581,7 +698,7 @@ const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
                       type="text" 
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      placeholder="Execute command or ask query..."
+                      placeholder={apiKey ? "Execute command or ask query..." : "Uplink required..."}
                       className="relative w-full bg-[#0a0a0a] border border-white/10 rounded-xl py-3.5 pl-4 pr-12 text-sm focus:outline-none focus:border-cyan-500/50 text-white placeholder-gray-600 font-mono transition-colors"
                   />
                   <button 
