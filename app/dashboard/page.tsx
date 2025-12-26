@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, FormEvent } from 'react';
 import { 
   Shield, 
   Play, 
@@ -23,15 +23,47 @@ import {
   Send,
   MessageSquare,
   Sparkles,
-  Database, // Added for Big Data
-  Binary    // Added for Quantum/Code
+  Database,
+  Binary
 } from 'lucide-react';
 
-const SentryDashboard = () => {
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isAiOpen, setIsAiOpen] = useState(false); // State for AI Panel
-  const [scrolled, setScrolled] = useState(false);
+// --- Types & Interfaces ---
+
+interface Video {
+  id: number;
+  title: string;
+  author: string;
+  views: string;
+  time: string;
+  duration: string;
+  thumbnailGradient: string;
+  icon: React.ReactNode;
+  tag: string;
+}
+
+interface Message {
+  id: number;
+  type: 'system' | 'user' | 'ai';
+  text: string;
+}
+
+interface SentryAIChatProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+interface SidebarIconProps {
+  icon: React.ReactNode;
+  active?: boolean;
+  tooltip: string;
+  onClick?: () => void;
+}
+
+const SentryDashboard: React.FC = () => {
+  const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [isAiOpen, setIsAiOpen] = useState<boolean>(false);
+  const [scrolled, setScrolled] = useState<boolean>(false);
 
   // Handle scroll effect for navbar
   useEffect(() => {
@@ -42,11 +74,11 @@ const SentryDashboard = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const categories = [
+  const categories: string[] = [
     "All", "Quantum Sec", "Big Data Intel", "Penetration Testing", "Red Teaming", "Zero-Day Analysis", "Cryptography"
   ];
 
-  const videos = [
+  const videos: Video[] = [
     {
       id: 101,
       title: "Post-Quantum Cryptography: Surviving Shor's Algorithm",
@@ -137,10 +169,11 @@ const SentryDashboard = () => {
     }
   ];
 
-  // Filter logic (simple)
-  const displayedVideos = activeCategory === 'All' 
-    ? videos 
-    : videos.filter(v => Math.random() > 0.5); 
+  // Filter logic
+  const displayedVideos = activeCategory === 'All'
+    ? videos
+    : videos.filter(video => video.tag.toLowerCase().includes(activeCategory.split(' ')[0].toLowerCase()));
+
 
   return (
     <div className="min-h-screen bg-[#020205] text-white font-sans selection:bg-cyan-500 selection:text-white overflow-x-hidden relative">
@@ -387,14 +420,14 @@ const SentryDashboard = () => {
 };
 
 // --- SENTRY AI CHAT COMPONENT ---
-const SentryAIChat = ({ isOpen, onClose }) => {
-  const [messages, setMessages] = useState([
+const SentryAIChat: React.FC<SentryAIChatProps> = ({ isOpen, onClose }) => {
+  const [messages, setMessages] = useState<Message[]>([
     { id: 1, type: 'system', text: 'Quantum Uplink established. QKD keys exchanged.' },
     { id: 2, type: 'ai', text: 'Greetings, Operative. Sentry Quantum Core online. I have access to petabyte-scale data streams and entangled state processors. How can I assist?' }
   ]);
-  const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef(null);
+  const [input, setInput] = useState<string>('');
+  const [isTyping, setIsTyping] = useState<boolean>(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -404,8 +437,8 @@ const SentryAIChat = ({ isOpen, onClose }) => {
     scrollToBottom();
   }, [messages, isTyping]);
 
-  const callGeminiAPI = async (currentHistory, userPrompt) => {
-    const apiKey = "AIzaSyAZss2PNiDegbCCMbqicR8vm4IhDYTuKzc"; // API Key provided by runtime environment
+  const callGeminiAPI = async (currentHistory: Message[], userPrompt: string): Promise<string> => {
+    const apiKey = ""; // API Key provided by runtime environment
     const systemPrompt = "You are Sentry Quantum Core, an advanced cybersecurity operations assistant integrated with Big Data lakes and Quantum processing units. Your tone is highly technical, authoritative, and concise. You use terms like 'qubit coherence', 'data ingestion', 'sharding', 'entanglement', 'zero-trust', and 'anomaly detection'. You are helpful but maintain a secure, military-grade persona. Keep responses under 3 sentences when possible.";
     
     // Filter out system messages and map to Gemini format
@@ -451,12 +484,12 @@ const SentryAIChat = ({ isOpen, onClose }) => {
     return "Error: Uplink timeout. Connection severed.";
   };
 
-  const handleSend = async (e) => {
+  const handleSend = async (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
     
     const userText = input;
-    const userMsg = { id: Date.now(), type: 'user', text: userText };
+    const userMsg: Message = { id: Date.now(), type: 'user', text: userText };
     
     setMessages(prev => [...prev, userMsg]);
     setInput('');
@@ -569,7 +602,7 @@ const SentryAIChat = ({ isOpen, onClose }) => {
 };
 
 // Subcomponent for Sidebar Icons
-const SidebarIcon = ({ icon, active, tooltip, onClick }) => (
+const SidebarIcon: React.FC<SidebarIconProps> = ({ icon, active, tooltip, onClick }) => (
   <div className="relative group">
     <button 
       onClick={onClick}
